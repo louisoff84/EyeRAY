@@ -1,11 +1,13 @@
 package fr.craftpick.eyeray;
 
 import fr.craftpick.eyeray.command.EyeRayCommand;
+import fr.craftpick.eyeray.compat.ServerCompat;
 import fr.craftpick.eyeray.config.EyeRaySettings;
 import fr.craftpick.eyeray.engine.OreObfuscationEngine;
 import fr.craftpick.eyeray.listener.PlayerListener;
 import fr.craftpick.eyeray.listener.WorldListener;
 import org.bukkit.command.PluginCommand;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class EyeRayPlugin extends JavaPlugin {
@@ -29,9 +31,13 @@ public final class EyeRayPlugin extends JavaPlugin {
         command.setTabCompleter(executor);
 
         engine.start();
-        getServer().getOnlinePlayers().forEach(engine::onPlayerJoin);
+        for (Player player : getServer().getOnlinePlayers()) {
+            engine.onPlayerJoin(player);
+        }
 
-        getLogger().info("EyeRAY " + getPluginMeta().getVersion() + " enabled. Client-side anti-XRay is "
+        getLogger().info("EyeRAY " + getDescription().getVersion()
+            + " enabled on " + ServerCompat.serverVersion()
+            + ". Universal compatibility: 1.8.8 -> 26.2. Anti-XRay is "
             + (engine.isRuntimeEnabled() ? "ACTIVE" : "DISABLED") + ".");
     }
 
