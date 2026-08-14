@@ -1,0 +1,75 @@
+# EyeRAY 1.0.0
+# Anti-XRay client-side: the real world is never modified.
+
+enabled: true
+
+# How many chunks around each player are protected.
+# 1 = 3x3 chunks, 2 = 5x5 chunks.
+chunk-radius: 1
+
+# Real blocks are revealed when the player gets this close.
+reveal-distance: 6.0
+
+# Main player update interval. Lower values reveal blocks faster but cost more CPU.
+refresh-interval-ticks: 5
+
+# Re-send obfuscation periodically so unrelated block updates cannot expose ores forever.
+reapply-interval-ticks: 100
+
+# Number of previously uncached chunks that may be scanned in one server tick.
+scan-budget-per-tick: 1
+
+# Vertical range to scan. Values are clamped to each world's actual height.
+scan:
+  min-y: -64
+  max-y: 128
+
+# If false, ores touching air/water/lava/non-occluding blocks remain visible.
+hide-exposed-ores: false
+
+# Materials hidden from XRay clients.
+protected-blocks:
+  - COAL_ORE
+  - DEEPSLATE_COAL_ORE
+  - COPPER_ORE
+  - DEEPSLATE_COPPER_ORE
+  - IRON_ORE
+  - DEEPSLATE_IRON_ORE
+  - GOLD_ORE
+  - DEEPSLATE_GOLD_ORE
+  - REDSTONE_ORE
+  - DEEPSLATE_REDSTONE_ORE
+  - LAPIS_ORE
+  - DEEPSLATE_LAPIS_ORE
+  - DIAMOND_ORE
+  - DEEPSLATE_DIAMOND_ORE
+  - EMERALD_ORE
+  - DEEPSLATE_EMERALD_ORE
+  - NETHER_GOLD_ORE
+  - NETHER_QUARTZ_ORE
+  - ANCIENT_DEBRIS
+
+# Optional Orebfuscator-like noise: send fake ores inside solid rock.
+# These ghost blocks disappear before the player reaches them.
+decoys:
+  enabled: true
+  max-per-chunk: 24
+  chance-per-10000: 18
+  seed-salt: 918273645
+  base-blocks:
+    - STONE
+    - DEEPSLATE
+    - NETHERRACK
+
+worlds:
+  # BLACKLIST = all worlds except listed ones.
+  # WHITELIST = only listed worlds.
+  mode: BLACKLIST
+  list: []
+
+messages:
+  prefix: '&8[&bEyeRAY&8] &7'
+  no-permission: '&cTu n''as pas la permission.'
+  reloaded: '&aConfiguration rechargee et cache vide.'
+  enabled: '&aProtection activee.'
+  disabled: '&cProtection desactivee. Les faux blocs ont ete restaures.'
