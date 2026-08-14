@@ -1,10 +1,11 @@
 name: EyeRAY
 version: '${version}'
 main: fr.craftpick.eyeray.EyeRayPlugin
-description: Client-side ore obfuscation and anti-XRay protection for Paper servers.
+description: Universal client-side anti-XRay protection for Minecraft 1.8.8 through Paper 26.2.
 author: louisoff84
 website: https://github.com/louisoff84/EyeRAY
-api-version: '26.2'
+
+# api-version is intentionally omitted so the same JAR can load on 1.8.8.
 
 commands:
   eyeray:
