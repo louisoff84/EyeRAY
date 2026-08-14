@@ -1,6 +1,7 @@
 package fr.craftpick.eyeray.engine;
 
 import fr.craftpick.eyeray.EyeRayPlugin;
+import fr.craftpick.eyeray.compat.ServerCompat;
 import fr.craftpick.eyeray.config.EyeRaySettings;
 import fr.craftpick.eyeray.model.BlockPos;
 import fr.craftpick.eyeray.model.ChunkKey;
@@ -13,17 +14,18 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
-import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
@@ -36,11 +38,11 @@ public final class OreObfuscationEngine {
 
     private final EyeRayPlugin plugin;
     private final EyeRayStats stats = new EyeRayStats();
-    private final Map<ChunkKey, List<ObfuscationTarget>> cache = new HashMap<>();
-    private final Map<UUID, Set<BlockPos>> fakeBlocksByPlayer = new HashMap<>();
-    private final Map<UUID, ChunkKey> lastPlayerChunk = new HashMap<>();
-    private final Queue<ScanRequest> scanQueue = new ArrayDeque<>();
-    private final Set<ScanRequestKey> queued = new HashSet<>();
+    private final Map<ChunkKey, List<ObfuscationTarget>> cache = new HashMap<ChunkKey, List<ObfuscationTarget>>();
+    private final Map<UUID, Set<BlockPos>> fakeBlocksByPlayer = new HashMap<UUID, Set<BlockPos>>();
+    private final Map<UUID, ChunkKey> lastPlayerChunk = new HashMap<UUID, ChunkKey>();
+    private final Queue<ScanRequest> scanQueue = new ArrayDeque<ScanRequest>();
+    private final Set<ScanRequestKey> queued = new HashSet<ScanRequestKey>();
 
     private EyeRaySettings settings;
     private boolean runtimeEnabled;
@@ -56,19 +58,15 @@ public final class OreObfuscationEngine {
 
     public void start() {
         stopTasks();
-        scanTask = Bukkit.getScheduler().runTaskTimer(plugin, this::drainScanQueue, 1L, 1L);
-        refreshTask = Bukkit.getScheduler().runTaskTimer(
-            plugin,
-            this::refreshPlayers,
-            settings.refreshIntervalTicks(),
-            settings.refreshIntervalTicks()
-        );
-        reapplyTask = Bukkit.getScheduler().runTaskTimer(
-            plugin,
-            this::reapplyAll,
-            settings.reapplyIntervalTicks(),
-            settings.reapplyIntervalTicks()
-        );
+        scanTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
+            @Override public void run() { drainScanQueue(); }
+        }, 1L, 1L);
+        refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
+            @Override public void run() { refreshPlayers(); }
+        }, settings.refreshIntervalTicks(), settings.refreshIntervalTicks());
+        reapplyTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
+            @Override public void run() { reapplyAll(); }
+        }, settings.reapplyIntervalTicks(), settings.reapplyIntervalTicks());
     }
 
     public void reload(EyeRaySettings newSettings) {
@@ -81,7 +79,7 @@ public final class OreObfuscationEngine {
         this.runtimeEnabled = newSettings.enabled();
         start();
         if (runtimeEnabled) {
-            Bukkit.getOnlinePlayers().forEach(this::queueNearbyChunks);
+            for (Player player : Bukkit.getOnlinePlayers()) queueNearbyChunks(player);
         }
     }
 
@@ -98,6 +96,9 @@ public final class OreObfuscationEngine {
         if (scanTask != null) scanTask.cancel();
         if (refreshTask != null) refreshTask.cancel();
         if (reapplyTask != null) reapplyTask.cancel();
+        scanTask = null;
+        refreshTask = null;
+        reapplyTask = null;
     }
 
     public void setRuntimeEnabled(boolean enabled) {
@@ -108,42 +109,36 @@ public final class OreObfuscationEngine {
             scanQueue.clear();
             queued.clear();
         } else {
-            Bukkit.getOnlinePlayers().forEach(this::queueNearbyChunks);
+            for (Player player : Bukkit.getOnlinePlayers()) queueNearbyChunks(player);
         }
     }
 
-    public boolean isRuntimeEnabled() {
-        return runtimeEnabled;
-    }
-
-    public EyeRaySettings settings() {
-        return settings;
-    }
-
-    public EyeRayStats stats() {
-        return stats;
-    }
-
-    public int cachedChunks() {
-        return cache.size();
-    }
-
-    public int queuedScans() {
-        return scanQueue.size();
-    }
+    public boolean isRuntimeEnabled() { return runtimeEnabled; }
+    public EyeRaySettings settings() { return settings; }
+    public EyeRayStats stats() { return stats; }
+    public int cachedChunks() { return cache.size(); }
+    public int queuedScans() { return scanQueue.size(); }
 
     public int hiddenBlockCount() {
-        return fakeBlocksByPlayer.values().stream().mapToInt(Set::size).sum();
+        int total = 0;
+        for (Set<BlockPos> positions : fakeBlocksByPlayer.values()) total += positions.size();
+        return total;
     }
 
     public int protectedPlayerCount() {
-        return (int) Bukkit.getOnlinePlayers().stream().filter(this::shouldProtect).count();
+        int count = 0;
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (shouldProtect(player)) count++;
+        }
+        return count;
     }
 
-    public void onPlayerJoin(Player player) {
+    public void onPlayerJoin(final Player player) {
         if (!shouldProtect(player)) return;
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            if (player.isOnline()) queueNearbyChunks(player);
+        Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+            @Override public void run() {
+                if (player.isOnline()) queueNearbyChunks(player);
+            }
         }, 20L);
     }
 
@@ -153,18 +148,20 @@ public final class OreObfuscationEngine {
         removeQueuedRequests(player.getUniqueId());
     }
 
-    public void onPlayerWorldOrTeleport(Player player) {
+    public void onPlayerWorldOrTeleport(final Player player) {
         restorePlayer(player);
         lastPlayerChunk.remove(player.getUniqueId());
         removeQueuedRequests(player.getUniqueId());
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            if (player.isOnline() && shouldProtect(player)) queueNearbyChunks(player);
+        Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+            @Override public void run() {
+                if (player.isOnline() && shouldProtect(player)) queueNearbyChunks(player);
+            }
         }, 3L);
     }
 
-    public void invalidate(Location location) {
-        if (location.getWorld() == null) return;
-        World world = location.getWorld();
+    public void invalidate(final Location location) {
+        if (location == null || location.getWorld() == null) return;
+        final World world = location.getWorld();
         int chunkX = location.getBlockX() >> 4;
         int chunkZ = location.getBlockZ() >> 4;
         for (int dx = -1; dx <= 1; dx++) {
@@ -173,17 +170,19 @@ public final class OreObfuscationEngine {
             }
         }
         restoreChangedPosition(location);
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            for (Player player : world.getPlayers()) {
-                if (shouldProtect(player) && player.getLocation().distanceSquared(location) <= 96.0 * 96.0) {
-                    queueNearbyChunks(player);
+        Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+            @Override public void run() {
+                for (Player player : world.getPlayers()) {
+                    if (shouldProtect(player) && player.getLocation().distanceSquared(location) <= 96.0 * 96.0) {
+                        queueNearbyChunks(player);
+                    }
                 }
             }
         }, 2L);
     }
 
     public void invalidateChunk(Chunk chunk) {
-        cache.remove(ChunkKey.of(chunk));
+        if (chunk != null) cache.remove(ChunkKey.of(chunk));
     }
 
     public void forceRescan(Player player) {
@@ -198,7 +197,9 @@ public final class OreObfuscationEngine {
         scanQueue.clear();
         queued.clear();
         lastPlayerChunk.clear();
-        if (runtimeEnabled) Bukkit.getOnlinePlayers().forEach(this::queueNearbyChunks);
+        if (runtimeEnabled) {
+            for (Player player : Bukkit.getOnlinePlayers()) queueNearbyChunks(player);
+        }
     }
 
     private void refreshPlayers() {
@@ -208,12 +209,9 @@ public final class OreObfuscationEngine {
                 restorePlayer(player);
                 continue;
             }
-            Chunk chunk = player.getChunk();
-            ChunkKey now = ChunkKey.of(chunk);
+            ChunkKey now = ChunkKey.of(player.getChunk());
             ChunkKey previous = lastPlayerChunk.put(player.getUniqueId(), now);
-            if (!now.equals(previous)) {
-                queueNearbyChunks(player);
-            }
+            if (!now.equals(previous)) queueNearbyChunks(player);
             revealNearby(player);
         }
     }
@@ -227,6 +225,7 @@ public final class OreObfuscationEngine {
 
     private boolean shouldProtect(Player player) {
         return runtimeEnabled
+            && player != null
             && player.isOnline()
             && !player.hasPermission("eyeray.bypass")
             && settings.isWorldEnabled(player.getWorld());
@@ -273,10 +272,11 @@ public final class OreObfuscationEngine {
             if (!world.isChunkLoaded(request.chunkKey().x(), request.chunkKey().z())) continue;
             if (!isWithinProtectionRadius(player, request.chunkKey())) continue;
 
-            List<ObfuscationTarget> targets = cache.computeIfAbsent(
-                request.chunkKey(),
-                key -> scanChunk(world.getChunkAt(key.x(), key.z()))
-            );
+            List<ObfuscationTarget> targets = cache.get(request.chunkKey());
+            if (targets == null) {
+                targets = scanChunk(world.getChunkAt(request.chunkKey().x(), request.chunkKey().z()));
+                cache.put(request.chunkKey(), targets);
+            }
             applyTargets(player, targets);
         }
     }
@@ -291,11 +291,11 @@ public final class OreObfuscationEngine {
     private List<ObfuscationTarget> scanChunk(Chunk chunk) {
         stats.chunkScanned();
         World world = chunk.getWorld();
-        int minY = Math.max(world.getMinHeight(), settings.scanMinY());
+        int minY = Math.max(ServerCompat.getMinHeight(world), settings.scanMinY());
         int maxY = Math.min(world.getMaxHeight() - 1, settings.scanMaxY());
-        if (maxY < minY) return List.of();
+        if (maxY < minY) return Collections.emptyList();
 
-        List<ObfuscationTarget> targets = new ArrayList<>();
+        List<ObfuscationTarget> targets = new ArrayList<ObfuscationTarget>();
         int decoys = 0;
         int startX = chunk.getX() << 4;
         int startZ = chunk.getZ() << 4;
@@ -310,12 +310,11 @@ public final class OreObfuscationEngine {
 
                     if (settings.protectedBlocks().contains(material)) {
                         if (!settings.hideExposedOres() && isExposed(block)) continue;
-                        targets.add(new ObfuscationTarget(
-                            new BlockPos(world.getUID(), x, y, z),
-                            material,
-                            coverFor(material),
-                            false
-                        ));
+                        Material cover = coverFor(material);
+                        if (cover != null) {
+                            targets.add(new ObfuscationTarget(
+                                new BlockPos(world.getUID(), x, y, z), material, cover, false));
+                        }
                         continue;
                     }
 
@@ -327,25 +326,20 @@ public final class OreObfuscationEngine {
                         Material fake = decoyFor(material, x, y, z);
                         if (fake != null) {
                             targets.add(new ObfuscationTarget(
-                                new BlockPos(world.getUID(), x, y, z),
-                                material,
-                                fake,
-                                true
-                            ));
+                                new BlockPos(world.getUID(), x, y, z), material, fake, true));
                             decoys++;
                         }
                     }
                 }
             }
         }
-        return List.copyOf(targets);
+        return Collections.unmodifiableList(new ArrayList<ObfuscationTarget>(targets));
     }
 
     private boolean isExposed(Block block) {
         for (BlockFace face : FACES) {
-            Block relative = block.getRelative(face);
-            Material neighbor = relative.getType();
-            if (neighbor.isAir() || !neighbor.isOccluding()) return true;
+            Material neighbor = block.getRelative(face).getType();
+            if (ServerCompat.isExposing(neighbor)) return true;
         }
         return false;
     }
@@ -362,33 +356,46 @@ public final class OreObfuscationEngine {
     }
 
     private Material decoyFor(Material base, int x, int y, int z) {
-        Material[] options;
-        if (base == Material.DEEPSLATE) {
-            options = new Material[] {
-                Material.DEEPSLATE_DIAMOND_ORE,
-                Material.DEEPSLATE_GOLD_ORE,
-                Material.DEEPSLATE_REDSTONE_ORE,
-                Material.DEEPSLATE_IRON_ORE
+        String baseName = base.name();
+        String[][] options;
+
+        if ("DEEPSLATE".equals(baseName)) {
+            options = new String[][] {
+                {"DEEPSLATE_DIAMOND_ORE"},
+                {"DEEPSLATE_GOLD_ORE"},
+                {"DEEPSLATE_REDSTONE_ORE"},
+                {"DEEPSLATE_IRON_ORE"},
+                {"DEEPSLATE_LAPIS_ORE"}
             };
-        } else if (base == Material.NETHERRACK) {
-            options = new Material[] {
-                Material.ANCIENT_DEBRIS,
-                Material.NETHER_GOLD_ORE,
-                Material.NETHER_QUARTZ_ORE
+        } else if ("NETHERRACK".equals(baseName)) {
+            options = new String[][] {
+                {"ANCIENT_DEBRIS"},
+                {"NETHER_GOLD_ORE"},
+                {"NETHER_QUARTZ_ORE", "QUARTZ_ORE"}
             };
-        } else if (base == Material.STONE) {
-            options = new Material[] {
-                Material.DIAMOND_ORE,
-                Material.GOLD_ORE,
-                Material.REDSTONE_ORE,
-                Material.IRON_ORE,
-                Material.EMERALD_ORE
+        } else if ("STONE".equals(baseName)) {
+            options = new String[][] {
+                {"DIAMOND_ORE"},
+                {"GOLD_ORE"},
+                {"REDSTONE_ORE"},
+                {"IRON_ORE"},
+                {"EMERALD_ORE"},
+                {"LAPIS_ORE"}
             };
         } else {
             return null;
         }
+
+        List<Material> available = new ArrayList<Material>();
+        for (String[] aliases : options) {
+            Material material = ServerCompat.material(aliases);
+            if (material != null) available.add(material);
+        }
+        if (available.isEmpty()) return null;
+
         long hash = mix64(((long) x << 32) ^ ((long) z << 1) ^ y ^ settings.decoySeedSalt());
-        return options[(int) Math.floorMod(hash, options.length)];
+        int index = (int) Math.floorMod(hash, (long) available.size());
+        return available.get(index);
     }
 
     private static long mix64(long z) {
@@ -399,19 +406,29 @@ public final class OreObfuscationEngine {
 
     private Material coverFor(Material material) {
         String name = material.name();
-        if (name.startsWith("DEEPSLATE_")) return Material.DEEPSLATE;
-        if (material == Material.ANCIENT_DEBRIS
-            || material == Material.NETHER_GOLD_ORE
-            || material == Material.NETHER_QUARTZ_ORE) {
-            return Material.NETHERRACK;
+        if (name.startsWith("DEEPSLATE_")) {
+            Material deepslate = ServerCompat.material("DEEPSLATE");
+            if (deepslate != null) return deepslate;
         }
-        return Material.STONE;
+        if ("ANCIENT_DEBRIS".equals(name)
+            || "NETHER_GOLD_ORE".equals(name)
+            || "NETHER_QUARTZ_ORE".equals(name)
+            || "QUARTZ_ORE".equals(name)) {
+            Material netherrack = ServerCompat.material("NETHERRACK");
+            if (netherrack != null) return netherrack;
+        }
+        return ServerCompat.material("STONE");
     }
 
+    @SuppressWarnings("deprecation")
     private void applyTargets(Player player, List<ObfuscationTarget> targets) {
         if (!shouldProtect(player)) return;
         double revealSquared = settings.revealDistance() * settings.revealDistance();
-        Set<BlockPos> fakePositions = fakeBlocksByPlayer.computeIfAbsent(player.getUniqueId(), id -> new HashSet<>());
+        Set<BlockPos> fakePositions = fakeBlocksByPlayer.get(player.getUniqueId());
+        if (fakePositions == null) {
+            fakePositions = new HashSet<BlockPos>();
+            fakeBlocksByPlayer.put(player.getUniqueId(), fakePositions);
+        }
         Location playerLocation = player.getLocation();
         World world = player.getWorld();
 
@@ -433,8 +450,7 @@ public final class OreObfuscationEngine {
                 continue;
             }
 
-            BlockData fakeData = target.fakeMaterial().createBlockData();
-            player.sendBlockChange(pos.toLocation(world), fakeData);
+            player.sendBlockChange(pos.toLocation(world), target.fakeMaterial(), (byte) 0);
             stats.blockChange();
             if (target.decoy()) stats.decoySent(); else stats.oreHidden();
             fakePositions.add(pos);
@@ -471,8 +487,7 @@ public final class OreObfuscationEngine {
             location.getWorld().getUID(),
             location.getBlockX(),
             location.getBlockY(),
-            location.getBlockZ()
-        );
+            location.getBlockZ());
         for (Player player : location.getWorld().getPlayers()) {
             Set<BlockPos> positions = fakeBlocksByPlayer.get(player.getUniqueId());
             if (positions != null && positions.remove(pos)) {
@@ -492,22 +507,65 @@ public final class OreObfuscationEngine {
     }
 
     public void restoreAll() {
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            restorePlayer(player);
-        }
+        for (Player player : Bukkit.getOnlinePlayers()) restorePlayer(player);
         fakeBlocksByPlayer.clear();
     }
 
+    @SuppressWarnings("deprecation")
     private void sendRealBlock(Player player, Block block) {
-        player.sendBlockChange(block.getLocation(), block.getBlockData());
+        // The legacy overload exists in 1.8.8 and remains available in Paper 26.2.
+        // EyeRAY only falsifies ores and solid base blocks, whose data value is safely 0.
+        player.sendBlockChange(block.getLocation(), block.getType(), (byte) 0);
         stats.blockChange();
     }
 
     private void removeQueuedRequests(UUID playerId) {
-        scanQueue.removeIf(request -> request.playerId().equals(playerId));
-        queued.removeIf(key -> key.playerId().equals(playerId));
+        Iterator<ScanRequest> requestIterator = scanQueue.iterator();
+        while (requestIterator.hasNext()) {
+            if (requestIterator.next().playerId().equals(playerId)) requestIterator.remove();
+        }
+        Iterator<ScanRequestKey> keyIterator = queued.iterator();
+        while (keyIterator.hasNext()) {
+            if (keyIterator.next().playerId().equals(playerId)) keyIterator.remove();
+        }
     }
 
-    private record ScanRequest(UUID playerId, ChunkKey chunkKey) {}
-    private record ScanRequestKey(UUID playerId, ChunkKey chunkKey) {}
+    private static final class ScanRequest {
+        private final UUID playerId;
+        private final ChunkKey chunkKey;
+
+        private ScanRequest(UUID playerId, ChunkKey chunkKey) {
+            this.playerId = playerId;
+            this.chunkKey = chunkKey;
+        }
+
+        private UUID playerId() { return playerId; }
+        private ChunkKey chunkKey() { return chunkKey; }
+    }
+
+    private static final class ScanRequestKey {
+        private final UUID playerId;
+        private final ChunkKey chunkKey;
+
+        private ScanRequestKey(UUID playerId, ChunkKey chunkKey) {
+            this.playerId = playerId;
+            this.chunkKey = chunkKey;
+        }
+
+        private UUID playerId() { return playerId; }
+        private ChunkKey chunkKey() { return chunkKey; }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) return true;
+            if (!(obj instanceof ScanRequestKey)) return false;
+            ScanRequestKey other = (ScanRequestKey) obj;
+            return playerId.equals(other.playerId) && chunkKey.equals(other.chunkKey);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(playerId, chunkKey);
+        }
+    }
 }
