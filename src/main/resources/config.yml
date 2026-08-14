@@ -1,5 +1,6 @@
-# EyeRAY 1.0.0
-# Anti-XRay client-side: the real world is never modified.
+# EyeRAY 1.1.0
+# Universal anti-XRay for Bukkit/Spigot/Paper 1.8.8 through Paper 26.2.
+# The real world is never modified: EyeRAY only sends fake block changes to clients.
 
 enabled: true
 
@@ -19,15 +20,17 @@ reapply-interval-ticks: 100
 # Number of previously uncached chunks that may be scanned in one server tick.
 scan-budget-per-tick: 1
 
-# Vertical range to scan. Values are clamped to each world's actual height.
+# Vertical range to scan. EyeRAY automatically clamps this to the server world's real height.
+# 1.8.8-1.16 worlds start at Y=0; modern worlds can use negative Y.
 scan:
   min-y: -64
   max-y: 128
 
-# If false, ores touching air/water/lava/non-occluding blocks remain visible.
+# If false, ores touching air/water/lava/non-solid blocks remain visible.
 hide-exposed-ores: false
 
 # Materials hidden from XRay clients.
+# Names unavailable on the running Minecraft version are ignored automatically.
 protected-blocks:
   - COAL_ORE
   - DEEPSLATE_COAL_ORE
@@ -47,10 +50,10 @@ protected-blocks:
   - DEEPSLATE_EMERALD_ORE
   - NETHER_GOLD_ORE
   - NETHER_QUARTZ_ORE
+  - QUARTZ_ORE
   - ANCIENT_DEBRIS
 
-# Optional Orebfuscator-like noise: send fake ores inside solid rock.
-# These ghost blocks disappear before the player reaches them.
+# Optional Orebfuscator-like noise: fake ores are placed only client-side.
 decoys:
   enabled: true
   max-per-chunk: 24
