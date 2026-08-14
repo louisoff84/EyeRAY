@@ -1,0 +1,22 @@
+name: EyeRAY
+version: '${version}'
+main: fr.craftpick.eyeray.EyeRayPlugin
+description: Client-side ore obfuscation and anti-XRay protection for Paper servers.
+author: louisoff84
+website: https://github.com/louisoff84/EyeRAY
+api-version: '26.2'
+
+commands:
+  eyeray:
+    description: Manage EyeRAY anti-XRay.
+    usage: /eyeray <status|reload|toggle|rescan>
+    aliases: [eray, antixray]
+    permission: eyeray.admin
+
+permissions:
+  eyeray.admin:
+    description: Allows management of EyeRAY.
+    default: op
+  eyeray.bypass:
+    description: Bypasses EyeRAY obfuscation.
+    default: false
