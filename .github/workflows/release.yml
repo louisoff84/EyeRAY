@@ -1,0 +1,110 @@
+name: Release EyeRAY
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "build.gradle"
+      - ".github/workflows/release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: current
+          cache-provider: basic
+
+      - name: Build universal JAR
+        run: gradle clean build --stacktrace
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(gradle properties -q | awk '/^version:/ {print $2; exit}')"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "unspecified" ]; then
+            echo "Unable to resolve project version" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cat > release-notes.md <<EOF
+          # EyeRAY ${VERSION}
+
+          Universal anti-XRay build for **Minecraft 1.8.8 through Paper 26.2**.
+
+          ## Compatibility
+          - One universal JAR.
+          - Java 8 bytecode for legacy servers.
+          - Compiled against Spigot 1.8.8 API.
+          - Also compilation-checked against Paper 26.2 API.
+          - Modern-only materials are detected dynamically and ignored on old versions.
+          - Supports legacy QUARTZ_ORE and modern NETHER_QUARTZ_ORE naming.
+
+          ## Features
+          - Client-side ore obfuscation without modifying real world blocks.
+          - Proximity reveal.
+          - Optional deterministic fake-ore decoys.
+          - Per-chunk scan cache and scan budget.
+          - World whitelist/blacklist.
+          - /eyeray status, reload, toggle and rescan.
+
+          Install `EyeRAY-${VERSION}.jar` in the server's `plugins/` directory and restart the server.
+          EOF
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          JAR="build/libs/EyeRAY-${VERSION}.jar"
+          SOURCES="build/libs/EyeRAY-${VERSION}-sources.jar"
+
+          test -f "$JAR"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$JAR" --clobber
+            if [ -f "$SOURCES" ]; then
+              gh release upload "$TAG" "$SOURCES" --clobber
+            fi
+            gh release edit "$TAG" \
+              --title "EyeRAY ${VERSION}" \
+              --notes-file release-notes.md \
+              --latest
+          else
+            FILES=("$JAR")
+            if [ -f "$SOURCES" ]; then
+              FILES+=("$SOURCES")
+            fi
+            gh release create "$TAG" "${FILES[@]}" \
+              --target "$GITHUB_SHA" \
+              --title "EyeRAY ${VERSION}" \
+              --notes-file release-notes.md \
+              --latest
+          fi
