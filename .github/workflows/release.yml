@@ -73,7 +73,7 @@ jobs:
           - World whitelist/blacklist.
           - /eyeray status, reload, toggle and rescan.
 
-          Install `EyeRAY-${VERSION}.jar` in the server's `plugins/` directory and restart the server.
+          Install EyeRAY-${VERSION}.jar in the server's plugins/ directory and restart the server.
           EOF
 
       - name: Create or update GitHub Release
