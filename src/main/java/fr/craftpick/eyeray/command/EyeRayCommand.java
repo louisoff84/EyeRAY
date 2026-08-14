@@ -1,6 +1,7 @@
 package fr.craftpick.eyeray.command;
 
 import fr.craftpick.eyeray.EyeRayPlugin;
+import fr.craftpick.eyeray.compat.ServerCompat;
 import fr.craftpick.eyeray.config.EyeRaySettings;
 import fr.craftpick.eyeray.engine.OreObfuscationEngine;
 import fr.craftpick.eyeray.stats.EyeRayStats;
@@ -11,8 +12,6 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,7 +29,7 @@ public final class EyeRayCommand implements CommandExecutor, TabCompleter {
     }
 
     @Override
-    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         EyeRaySettings settings = engine.settings();
         if (!sender.hasPermission("eyeray.admin")) {
             sender.sendMessage(settings.prefix() + settings.noPermission());
@@ -38,21 +37,21 @@ public final class EyeRayCommand implements CommandExecutor, TabCompleter {
         }
 
         String sub = args.length == 0 ? "status" : args[0].toLowerCase(Locale.ROOT);
-        switch (sub) {
-            case "status" -> sendStatus(sender);
-            case "reload" -> {
-                plugin.reloadEyeRay();
-                sender.sendMessage(engine.settings().prefix() + engine.settings().reloaded());
-            }
-            case "toggle" -> {
-                boolean enable = !engine.isRuntimeEnabled();
-                engine.setRuntimeEnabled(enable);
-                sender.sendMessage(engine.settings().prefix() + (enable
-                    ? engine.settings().enabledMessage()
-                    : engine.settings().disabledMessage()));
-            }
-            case "rescan" -> handleRescan(sender, args);
-            default -> sendHelp(sender, label);
+        if ("status".equals(sub)) {
+            sendStatus(sender);
+        } else if ("reload".equals(sub)) {
+            plugin.reloadEyeRay();
+            sender.sendMessage(engine.settings().prefix() + engine.settings().reloaded());
+        } else if ("toggle".equals(sub)) {
+            boolean enable = !engine.isRuntimeEnabled();
+            engine.setRuntimeEnabled(enable);
+            sender.sendMessage(engine.settings().prefix() + (enable
+                ? engine.settings().enabledMessage()
+                : engine.settings().disabledMessage()));
+        } else if ("rescan".equals(sub)) {
+            handleRescan(sender, args);
+        } else {
+            sendHelp(sender, label);
         }
         return true;
     }
@@ -75,7 +74,9 @@ public final class EyeRayCommand implements CommandExecutor, TabCompleter {
     private void sendStatus(CommandSender sender) {
         EyeRayStats stats = engine.stats();
         EyeRaySettings settings = engine.settings();
-        sender.sendMessage(ChatColor.AQUA + "EyeRAY " + ChatColor.GRAY + "v" + plugin.getPluginMeta().getVersion());
+        sender.sendMessage(ChatColor.AQUA + "EyeRAY " + ChatColor.GRAY + "v" + plugin.getDescription().getVersion());
+        sender.sendMessage(ChatColor.GRAY + "Serveur: " + ChatColor.WHITE + ServerCompat.serverVersion());
+        sender.sendMessage(ChatColor.GRAY + "Compatibilite: " + ChatColor.WHITE + "1.8.8 -> 26.2");
         sender.sendMessage(ChatColor.GRAY + "Etat: " + (engine.isRuntimeEnabled() ? ChatColor.GREEN + "ACTIVE" : ChatColor.RED + "DESACTIVE"));
         sender.sendMessage(ChatColor.GRAY + "Joueurs proteges: " + ChatColor.WHITE + engine.protectedPlayerCount());
         sender.sendMessage(ChatColor.GRAY + "Blocs clients falsifies: " + ChatColor.WHITE + engine.hiddenBlockCount());
@@ -96,13 +97,13 @@ public final class EyeRayCommand implements CommandExecutor, TabCompleter {
     }
 
     @Override
-    public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (!sender.hasPermission("eyeray.admin")) return Collections.emptyList();
         if (args.length == 1) {
             return filter(Arrays.asList("status", "reload", "toggle", "rescan"), args[0]);
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("rescan")) {
-            List<String> players = new ArrayList<>();
+            List<String> players = new ArrayList<String>();
             for (Player player : Bukkit.getOnlinePlayers()) players.add(player.getName());
             return filter(players, args[1]);
         }
@@ -111,6 +112,10 @@ public final class EyeRayCommand implements CommandExecutor, TabCompleter {
 
     private List<String> filter(List<String> values, String prefix) {
         String lower = prefix.toLowerCase(Locale.ROOT);
-        return values.stream().filter(value -> value.toLowerCase(Locale.ROOT).startsWith(lower)).toList();
+        List<String> result = new ArrayList<String>();
+        for (String value : values) {
+            if (value.toLowerCase(Locale.ROOT).startsWith(lower)) result.add(value);
+        }
+        return result;
     }
 }
