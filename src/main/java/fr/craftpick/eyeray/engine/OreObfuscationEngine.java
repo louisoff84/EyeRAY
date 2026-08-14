@@ -209,7 +209,7 @@ public final class OreObfuscationEngine {
                 restorePlayer(player);
                 continue;
             }
-            ChunkKey now = ChunkKey.of(player.getChunk());
+            ChunkKey now = ChunkKey.of(player.getLocation().getChunk());
             ChunkKey previous = lastPlayerChunk.put(player.getUniqueId(), now);
             if (!now.equals(previous)) queueNearbyChunks(player);
             revealNearby(player);
@@ -513,8 +513,6 @@ public final class OreObfuscationEngine {
 
     @SuppressWarnings("deprecation")
     private void sendRealBlock(Player player, Block block) {
-        // The legacy overload exists in 1.8.8 and remains available in Paper 26.2.
-        // EyeRAY only falsifies ores and solid base blocks, whose data value is safely 0.
         player.sendBlockChange(block.getLocation(), block.getType(), (byte) 0);
         stats.blockChange();
     }
