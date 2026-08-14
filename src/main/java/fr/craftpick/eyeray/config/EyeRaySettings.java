@@ -1,5 +1,6 @@
 package fr.craftpick.eyeray.config;
 
+import fr.craftpick.eyeray.compat.ServerCompat;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -57,12 +58,13 @@ public final class EyeRaySettings {
 
         WorldMode parsedMode;
         try {
-            parsedMode = WorldMode.valueOf(config.getString("worlds.mode", "BLACKLIST").toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException ex) {
+            String mode = config.getString("worlds.mode", "BLACKLIST");
+            parsedMode = WorldMode.valueOf(mode.toUpperCase(Locale.ROOT));
+        } catch (Exception ex) {
             parsedMode = WorldMode.BLACKLIST;
         }
         worldMode = parsedMode;
-        worlds = new HashSet<>();
+        worlds = new HashSet<String>();
         for (String world : config.getStringList("worlds.list")) {
             worlds.add(world.toLowerCase(Locale.ROOT));
         }
@@ -81,7 +83,7 @@ public final class EyeRaySettings {
     private static Set<Material> parseMaterials(Iterable<String> names) {
         EnumSet<Material> result = EnumSet.noneOf(Material.class);
         for (String name : names) {
-            Material material = Material.matchMaterial(name);
+            Material material = ServerCompat.materialFromConfig(name);
             if (material != null && material.isBlock()) {
                 result.add(material);
             }
@@ -89,7 +91,6 @@ public final class EyeRaySettings {
         return Collections.unmodifiableSet(result);
     }
 
-    @SuppressWarnings("deprecation")
     private static String color(String value) {
         return ChatColor.translateAlternateColorCodes('&', value == null ? "" : value);
     }
