@@ -3,33 +3,56 @@ plugins {
 }
 
 group = 'fr.craftpick'
-version = '1.0.0'
-
-def targetJavaVersion = 25
+version = '1.1.0'
 
 repositories {
     mavenCentral()
+    maven {
+        name = 'spigotmc'
+        url = 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/'
+    }
     maven {
         name = 'papermc'
         url = 'https://repo.papermc.io/repository/maven-public/'
     }
 }
 
+configurations {
+    modernApiCheck
+}
+
 dependencies {
-    compileOnly 'io.papermc.paper:paper-api:26.2.build.+'
+    // Oldest supported API: guarantees that the produced JAR only links Bukkit APIs available in 1.8.8.
+    compileOnly 'org.spigotmc:spigot-api:1.8.8-R0.1-SNAPSHOT'
+
+    // CI-only compatibility check against the newest supported Paper API.
+    modernApiCheck 'io.papermc.paper:paper-api:26.2.build.+'
 }
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+        // Gradle runs on a current JDK, but javac emits Java 8 bytecode below.
+        languageVersion = JavaLanguageVersion.of(25)
     }
     withSourcesJar()
 }
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
-    options.release = targetJavaVersion
+    options.release = 8
 }
+
+tasks.register('modernApiCheck', JavaCompile) {
+    description = 'Compiles EyeRAY sources against Paper 26.2 without changing the universal JAR.'
+    group = 'verification'
+    source = sourceSets.main.java
+    classpath = configurations.modernApiCheck
+    destinationDirectory = layout.buildDirectory.dir('modern-api-check')
+    options.encoding = 'UTF-8'
+    options.release = 8
+}
+
+check.dependsOn tasks.named('modernApiCheck')
 
 processResources {
     def props = [version: project.version]
@@ -45,7 +68,8 @@ jar {
     manifest {
         attributes(
             'Implementation-Title': 'EyeRAY',
-            'Implementation-Version': project.version
+            'Implementation-Version': project.version,
+            'EyeRAY-Compatible-Versions': '1.8.8-26.2'
         )
     }
 }
