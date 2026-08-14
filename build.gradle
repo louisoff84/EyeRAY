@@ -1,0 +1,58 @@
+plugins {
+    id 'java'
+}
+
+group = 'fr.craftpick'
+version = '1.0.0'
+
+def targetJavaVersion = 25
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'papermc'
+        url = 'https://repo.papermc.io/repository/maven-public/'
+    }
+}
+
+dependencies {
+    compileOnly 'io.papermc.paper:paper-api:26.2.build.+'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+    }
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = targetJavaVersion
+}
+
+processResources {
+    def props = [version: project.version]
+    inputs.properties props
+    filteringCharset = 'UTF-8'
+    filesMatching('plugin.yml') {
+        expand props
+    }
+}
+
+jar {
+    archiveBaseName = 'EyeRAY'
+    manifest {
+        attributes(
+            'Implementation-Title': 'EyeRAY',
+            'Implementation-Version': project.version
+        )
+    }
+}
+
+tasks.register('printJarPath') {
+    dependsOn jar
+    doLast {
+        println tasks.jar.archiveFile.get().asFile.absolutePath
+    }
+}
